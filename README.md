@@ -62,3 +62,51 @@ per-seed fitness trajectories (the `fitness_table/` JSONs). The implementation h
 the **online** counterpart: the bandit makes its choice live, and the chosen arm's next
 generation is actually rolled out (LLM calls and evaluations happen during the bandit
 loop).
+
+## FLOPs accounting
+
+Same algorithmic convention as `openevolve/scripts/flops_utils.py`:
+
+```
+flops_per_attempt = 2 · params_active · (uncached_prompt_tokens + completion_tokens)
+uncached_prompt_tokens = usage.prompt_tokens − usage.prompt_tokens_details.cached_tokens
+```
+
+* `params_active` is per-model and lives in [`allocator/models.py`](allocator/models.py)
+  — the Qwen3 values are pulled from `openevolve/configs/model_archs.yaml` (dense
+  models, so `params_active == params_total`).
+* Each LLM call records one `attempt` per retry (including timed-out / errored ones)
+  with the OpenAI `usage` payload and `finish_reason`. Attempts are stored on every
+  child of every generation in the run trajectory.
+* Per-run aggregation supports the same three timeout policies as upstream:
+  `worst_case` (default — count `max_tokens` as the output for timed-out attempts),
+  `exclude` (drop), and `bounded` (median completion among `finish_reason == "length"`
+  attempts in the same run).
+
+Result JSONs include:
+
+* Greedy: `result["flops"] = {worst_case, exclude, bounded}` plus
+  `result["flops_per_generation"]` (worst_case, one float per generation).
+* Bandit: `result["flops_per_round"]`, `result["cumulative_flops"]`,
+  `result["total_flops_worst_case"]`, and full per-arm `flops` summaries under
+  `result["arm_results"][i]["flops"]`.
+
+Equivalence check on a real `phi_v2_flops` run from `fitness_table/`:
+
+```bash
+python3 -c "
+import json, sys
+sys.path.insert(0, '.'); sys.path.insert(0, '../openevolve/scripts')
+from allocator.flops import flops_for_run as mine
+from allocator.models import get_model
+from flops_utils import flops_for_run as upstream, load_arch_yaml
+run  = json.load(open('../fitness_table/QWen8B/CP/Greedy/phase2_multiT_circle_packing_8B_C512_anvil/T2/evo_T2_C512_seed40/phi_C512_T2_N256_seed40.json'))
+arch = load_arch_yaml('../openevolve/configs/model_archs.yaml')[run['model']]
+for p in ('worst_case', 'exclude', 'bounded'):
+    print(p, mine(run, get_model('qwen3-8b'), p)['total_flops'],
+              upstream(run, arch, p)['total_flops'])
+"
+# worst_case 8.373795e+16  8.373795e+16     <- bit-exact match
+# exclude    8.373795e+16  8.373795e+16
+# bounded    8.373795e+16  8.373795e+16
+```

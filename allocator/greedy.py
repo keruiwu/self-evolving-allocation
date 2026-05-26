@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .evaluator import evaluate_code
+from .flops import flops_per_round, flops_summary
 from .llm import LLMClient
 from .parser import parse_full_rewrite
 from .prompt import build_user_message
@@ -110,9 +111,15 @@ class GreedyRunner:
 
         async def generate_one(idx: int, seed: int) -> dict[str, Any]:
             async with sem:
-                content = await self.llm.chat(system_msg, user_msg, seed=seed)
-            code = parse_full_rewrite(content)
-            return {"idx": idx, "seed": seed, "code": code}
+                meta = await self.llm.chat(system_msg, user_msg, seed=seed)
+            code = parse_full_rewrite(meta.get("content"))
+            return {
+                "idx": idx,
+                "seed": seed,
+                "code": code,
+                "attempts": meta.get("attempts", []),
+                "final_status": meta.get("final_status"),
+            }
 
         gen_results = await asyncio.gather(
             *[generate_one(i, s) for i, s in enumerate(child_seeds)]
@@ -158,7 +165,14 @@ class GreedyRunner:
             "n_valid": n_valid,
             "n_improved": n_improved,
             "children": [
-                {"idx": r["idx"], "seed": r["seed"], "fitness": r["fitness"], "valid": r["valid"]}
+                {
+                    "idx": r["idx"],
+                    "seed": r["seed"],
+                    "fitness": r["fitness"],
+                    "valid": r["valid"],
+                    "attempts": r.get("attempts", []),
+                    "final_status": r.get("final_status"),
+                }
                 for r in evaluated
             ],
             "gen_time_s": round(time.time() - gen_start, 2),
@@ -180,7 +194,7 @@ class GreedyRunner:
 
     def to_result(self) -> dict[str, Any]:
         wall = round(time.time() - self.started_at, 1) if self.started_at else 0.0
-        return {
+        result: dict[str, Any] = {
             "task": self.task.key,
             "model": self.llm.spec.key,
             "model_name": self.llm.spec.name,
@@ -193,3 +207,6 @@ class GreedyRunner:
             "trajectory": self.trajectory,
             "wall_time_seconds": wall,
         }
+        result["flops"] = flops_summary(result, self.llm.spec)
+        result["flops_per_generation"] = flops_per_round(result, self.llm.spec)
+        return result

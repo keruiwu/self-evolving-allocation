@@ -10,6 +10,8 @@ from dataclasses import dataclass
 class ModelSpec:
     key: str
     name: str
+    params_active: int               # dense forward-pass parameters (== params_total for dense)
+    params_total: int                # total parameters (incl. embedding / lm_head)
     api_base_env: str = "LLM_API_BASE"
     api_key_env: str = "LLM_API_KEY"
     default_api_base: str = "http://localhost:8000/v1"
@@ -25,10 +27,22 @@ class ModelSpec:
         return os.environ.get(self.api_key_env, "dummy")
 
 
+# params_active for Qwen3-8B and Qwen3-14B match openevolve/configs/model_archs.yaml
+# (architecture-derived totals from the pinned HF config.json revisions).
+# Llama-3.1-8B is dense; total = 8,030,261,248 (Meta release).
 MODELS: dict[str, ModelSpec] = {
-    "qwen3-8b": ModelSpec(key="qwen3-8b", name="Qwen/Qwen3-8B"),
-    "qwen3-14b": ModelSpec(key="qwen3-14b", name="Qwen/Qwen3-14B"),
-    "llama-8b": ModelSpec(key="llama-8b", name="meta-llama/Meta-Llama-3.1-8B-Instruct"),
+    "qwen3-8b": ModelSpec(
+        key="qwen3-8b", name="Qwen/Qwen3-8B",
+        params_active=8_190_726_144, params_total=8_190_726_144,
+    ),
+    "qwen3-14b": ModelSpec(
+        key="qwen3-14b", name="Qwen/Qwen3-14B",
+        params_active=14_768_296_960, params_total=14_768_296_960,
+    ),
+    "llama-8b": ModelSpec(
+        key="llama-8b", name="meta-llama/Meta-Llama-3.1-8B-Instruct",
+        params_active=8_030_261_248, params_total=8_030_261_248,
+    ),
 }
 
 
