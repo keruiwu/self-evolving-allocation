@@ -1,5 +1,7 @@
 # self-evolving-allocation
-This repository is the official implementation of "Compute Allocation in Evolutionary Search: From Depth–Breadth to Bandits".
+
+Anonymous supplementary code for the paper *"Compute Allocation in Evolutionary Search:
+From Depth–Breadth to Bandits"* (under double-blind review).
 
 ## Setup
 
@@ -24,9 +26,8 @@ python run_greedy.py --task ht  --model llama-8b  --T 4  --N 128 --seed 42
 ```
 
 Results land at `results/<task>/<model>/greedy_C<C>_T<T>_N<N>_seed<seed>.json`.
-The JSON contains the full per-generation trajectory (best fitness, per-child fitness,
-prompt and child seeds, etc.) — same idea as the `fitness_table/` outputs but trimmed
-to the essentials needed for fitness analysis.
+The JSON contains the full per-generation trajectory: best fitness, per-child fitness,
+parent / child seeds, per-attempt OpenAI `usage` payload, and finish reasons.
 
 ## Online bandit + parallel greedy
 
@@ -55,33 +56,33 @@ counts, and the full per-arm greedy trajectory.
   share the `LLM_API_BASE` / `LLM_API_KEY` env vars; override
   `api_base_env` / `api_key_env` if you need per-model endpoints.
 
-## Relationship to the post-hoc bandit in `writing/scripts/`
+## Online vs post-hoc bandit
 
-`writing/scripts/paper_bandit_implementation.py` replays the bandits over already-logged
-per-seed fitness trajectories (the `fitness_table/` JSONs). The implementation here is
-the **online** counterpart: the bandit makes its choice live, and the chosen arm's next
-generation is actually rolled out (LLM calls and evaluations happen during the bandit
-loop).
+A common companion to this online orchestrator is a *post-hoc* bandit that replays UCB
+/ EXP3.P / Thompson / Random over already-logged per-seed fitness trajectories. The
+implementation here is the **online** counterpart: the bandit makes each choice live,
+and the chosen arm's next generation is actually rolled out (LLM calls and evaluations
+happen during the bandit loop).
 
 ## FLOPs accounting
 
-Same algorithmic convention as `openevolve/scripts/flops_utils.py`:
+Same algorithmic FLOPs convention used throughout the paper:
 
 ```
 flops_per_attempt = 2 · params_active · (uncached_prompt_tokens + completion_tokens)
 uncached_prompt_tokens = usage.prompt_tokens − usage.prompt_tokens_details.cached_tokens
 ```
 
-* `params_active` is per-model and lives in [`allocator/models.py`](allocator/models.py)
-  — the Qwen3 values are pulled from `openevolve/configs/model_archs.yaml` (dense
-  models, so `params_active == params_total`).
+* `params_active` is per-model and lives in [`allocator/models.py`](allocator/models.py).
+  Dense Qwen3 / Llama models have `params_active == params_total`; the field exists so
+  MoE variants can be added without a schema change.
 * Each LLM call records one `attempt` per retry (including timed-out / errored ones)
   with the OpenAI `usage` payload and `finish_reason`. Attempts are stored on every
   child of every generation in the run trajectory.
-* Per-run aggregation supports the same three timeout policies as upstream:
-  `worst_case` (default — count `max_tokens` as the output for timed-out attempts),
-  `exclude` (drop), and `bounded` (median completion among `finish_reason == "length"`
-  attempts in the same run).
+* Per-run aggregation supports three timeout policies for attempts with no `usage`:
+  `worst_case` (default — count `max_tokens` as the output), `exclude` (drop), and
+  `bounded` (median completion among `finish_reason == "length"` attempts in the same
+  run).
 
 Result JSONs include:
 
@@ -90,23 +91,3 @@ Result JSONs include:
 * Bandit: `result["flops_per_round"]`, `result["cumulative_flops"]`,
   `result["total_flops_worst_case"]`, and full per-arm `flops` summaries under
   `result["arm_results"][i]["flops"]`.
-
-Equivalence check on a real `phi_v2_flops` run from `fitness_table/`:
-
-```bash
-python3 -c "
-import json, sys
-sys.path.insert(0, '.'); sys.path.insert(0, '../openevolve/scripts')
-from allocator.flops import flops_for_run as mine
-from allocator.models import get_model
-from flops_utils import flops_for_run as upstream, load_arch_yaml
-run  = json.load(open('../fitness_table/QWen8B/CP/Greedy/phase2_multiT_circle_packing_8B_C512_anvil/T2/evo_T2_C512_seed40/phi_C512_T2_N256_seed40.json'))
-arch = load_arch_yaml('../openevolve/configs/model_archs.yaml')[run['model']]
-for p in ('worst_case', 'exclude', 'bounded'):
-    print(p, mine(run, get_model('qwen3-8b'), p)['total_flops'],
-              upstream(run, arch, p)['total_flops'])
-"
-# worst_case 8.373795e+16  8.373795e+16     <- bit-exact match
-# exclude    8.373795e+16  8.373795e+16
-# bounded    8.373795e+16  8.373795e+16
-```

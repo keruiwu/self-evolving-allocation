@@ -1,10 +1,9 @@
 """Minimal async OpenAI-compatible client used by the greedy/bandit runners.
 
-Each ``chat`` call records one ``attempt`` per retry, including timed-out / errored
-ones, with the OpenAI ``usage`` payload (``prompt_tokens``, ``completion_tokens``,
-``prompt_tokens_details.cached_tokens``) and ``finish_reason``. This is the same
-attempt-record shape used by ``openevolve/openevolve/llm/openai.py`` and consumed by
-``openevolve/scripts/flops_utils.py``.
+Each ``chat`` call records one ``attempt`` per retry (including timed-out / errored
+ones) with the OpenAI ``usage`` payload (``prompt_tokens``, ``completion_tokens``,
+``prompt_tokens_details.cached_tokens``) and ``finish_reason``. The downstream FLOPs
+accountant in ``allocator/flops.py`` consumes these attempt records.
 """
 
 from __future__ import annotations
@@ -40,8 +39,8 @@ class LLMClient:
 
         ``attempts`` always has at least one entry. Each entry contains
         ``{attempt_idx, status, latency_s, usage, finish_reason, timed_out,
-        estimated_output_tokens?}`` — the same shape as openevolve's attempt records,
-        so flops_utils.flops_call works on them unchanged.
+        estimated_output_tokens?}`` — the shape consumed directly by
+        ``allocator.flops.flops_call``.
         """
         messages = [
             {"role": "system", "content": system},
@@ -123,7 +122,7 @@ class LLMClient:
 
 
 def _dump_usage(usage: Any) -> dict[str, Any]:
-    """Pydantic v1/v2-defensive dump (matches openevolve/llm/openai.py)."""
+    """Pydantic v1/v2-defensive dump of an OpenAI ``CompletionUsage`` object."""
     if usage is None:
         return {}
     if hasattr(usage, "model_dump"):

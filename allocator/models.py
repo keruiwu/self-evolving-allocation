@@ -27,9 +27,8 @@ class ModelSpec:
         return os.environ.get(self.api_key_env, "dummy")
 
 
-# params_active for Qwen3-8B and Qwen3-14B match openevolve/configs/model_archs.yaml
-# (architecture-derived totals from the pinned HF config.json revisions).
-# Llama-3.1-8B is dense; total = 8,030,261,248 (Meta release).
+# params_active values are architecture-derived totals from each model's published
+# HuggingFace config.json (dense models, so params_active == params_total).
 MODELS: dict[str, ModelSpec] = {
     "qwen3-8b": ModelSpec(
         key="qwen3-8b", name="Qwen/Qwen3-8B",

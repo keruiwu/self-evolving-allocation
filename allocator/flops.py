@@ -1,4 +1,4 @@
-"""Algorithmic FLOPs accounting — same convention as openevolve/scripts/flops_utils.py.
+"""Algorithmic FLOPs accounting for LLM-driven evolutionary search.
 
 Per-attempt convention::
 

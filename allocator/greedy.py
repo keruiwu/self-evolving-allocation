@@ -30,7 +30,8 @@ logger = logging.getLogger(__name__)
 
 
 def _child_seed(run_seed: int, N: int, gen: int, idx: int) -> int:
-    """Deterministic per-(run, N, gen, child) seed (matches openevolve convention)."""
+    """Deterministic per-(run, N, gen, child) seed via sha256, so different
+    (run_seed, N, gen, idx) tuples always produce distinct child seeds."""
     data = struct.pack(">IIII", run_seed & 0xFFFFFFFF, N & 0xFFFFFFFF, gen & 0xFFFFFFFF, idx & 0xFFFFFFFF)
     return int.from_bytes(hashlib.sha256(data).digest()[:4], "big")
 
