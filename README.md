@@ -1,7 +1,7 @@
 # self-evolving-allocation
 
 Anonymous supplementary code for the paper *"Compute Allocation in Evolutionary Search:
-From Depth–Breadth to Bandits"* (under double-blind review).
+From Depth–Breadth to Multi-Armed Bandits"* (under double-blind review).
 
 ## Setup
 
